@@ -23,8 +23,8 @@
 //    through `plugins.row.config`. It lists the model providers *already
 //    configured in DSH* — read from the host half, which reads the Loader's own
 //    composition — so the user picks a route and a model instead of retyping an
-//    endpoint. It also offers a prompt box that generates an image on the spot,
-//    through the same host operation the `generate_image` tool calls.
+//    endpoint. It only edits settings: generating happens through the
+//    `generate_image` tool, which is the one path that spends a call.
 //
 // Only `react` comes from the browser module table. No Harness Client package
 // is imported: a plain-JS plugin has no type check, and a throwing component
@@ -93,9 +93,6 @@ window.__ModuleLoader__.load({
       save: '保存',
       saved: '已保存',
       saving: '正在读取…',
-      prompt: '描述你想生成的图片',
-      generate: '生成图片',
-      generating: '正在生成…',
       noProvider: '不指定（使用下面的地址）',
       manual: '手动填写',
       hint: '开关决定 generate_image 是否被组合进预设；模型在「设置 → 插件」里配置。',
@@ -124,9 +121,6 @@ window.__ModuleLoader__.load({
       save: 'Save',
       saved: 'Saved',
       saving: 'Loading…',
-      prompt: 'Describe the image you want',
-      generate: 'Generate',
-      generating: 'Generating…',
       noProvider: 'None (use the URL below)',
       manual: 'Manual',
       hint: 'The switch composes generate_image into the preset; the model is configured in Settings → Plugins.',
@@ -314,9 +308,6 @@ window.__ModuleLoader__.load({
 .dsio-button:disabled { opacity: 0.5; cursor: default; }
 .dsio-status { color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 16px; }
 .dsio-error { color: var(--dsw-alias-label-error, #d93025); font-size: 11px; line-height: 16px; overflow-wrap: anywhere; }
-.dsio-files { display: flex; flex-direction: column; gap: 6px; }
-.dsio-file { color: var(--dsw-alias-label-secondary); font-size: 11px; line-height: 16px; overflow-wrap: anywhere; }
-.dsio-thumb { max-width: 160px; max-height: 160px; border-radius: var(--dsw-radius-md, 6px); border: 1px solid var(--dsw-alias-border-l1); }
 `
     function useStyles() {
       useEffect(() => {
@@ -330,15 +321,12 @@ window.__ModuleLoader__.load({
       }, [])
     }
 
-    // --- settings + generation --------------------------------------------------
+    // --- settings ---------------------------------------------------------------
     function useImageState(ctx, copy) {
       const [config, setConfig] = useState(null)
       const [draft, setDraft] = useState(null)
       const [status, setStatus] = useState('')
       const [error, setError] = useState('')
-      const [prompt, setPrompt] = useState('')
-      const [busy, setBusy] = useState(false)
-      const [files, setFiles] = useState([])
 
       useEffect(() => {
         let cancelled = false
@@ -365,24 +353,12 @@ window.__ModuleLoader__.load({
         }
       }, [draft, copy])
 
-      const generate = useCallback(async () => {
-        setBusy(true); setError(''); setFiles([])
-        try {
-          const payload = await call('/generate', { method: 'POST', body: JSON.stringify({ prompt }) })
-          setFiles(payload.files ?? [])
-        } catch (failure) {
-          setError(String(failure.message ?? failure))
-        } finally {
-          setBusy(false)
-        }
-      }, [prompt])
-
       const set = useCallback((key) => (event) => {
         const value = event?.target?.value ?? ''
         setDraft((current) => ({ ...(current ?? {}), [key]: value }))
       }, [])
 
-      return { config, draft, set, setDraft, save, generate, prompt, setPrompt, busy, files, status, error }
+      return { config, draft, set, setDraft, save, status, error }
     }
 
     // --- the settings page on the Plugins screen ---------------------------------
@@ -397,7 +373,7 @@ window.__ModuleLoader__.load({
      */
     function ImageSettings(props) {
       const { ctx, copy, state, view } = props
-      const { config, draft, set, setDraft, save, generate, prompt, setPrompt, busy, files, status, error } = state
+      const { config, draft, set, setDraft, save, status, error } = state
 
       if (view === 'summary') return h('span', null, copy.summary)
 
@@ -445,10 +421,10 @@ window.__ModuleLoader__.load({
           ),
           field(copy.baseURL, 'baseURL', { placeholder: selected?.baseURL || 'https://api.openai.com/v1' }),
           field(copy.apiKeyEnv, 'apiKeyEnv', { placeholder: selected?.apiKeyEnv || 'OPENAI_API_KEY' }),
-          // The effective default is `auto`, so the empty box shows exactly that:
-          // an empty size is not "unset", it is the provider's own choice.
+          // The effective default is `auto` for both, so the empty box shows
+          // exactly that: empty is not "unset", it is the provider's own choice.
           field(copy.size, 'size', { placeholder: 'auto' }),
-          field(copy.quality, 'quality', { placeholder: 'standard' }),
+          field(copy.quality, 'quality', { placeholder: 'auto' }),
           field(copy.outputDir, 'outputDir', { placeholder: '~/.dsh/dsh-image-openai' }),
           field(copy.prefix, 'promptPrefix')
         ),
@@ -460,29 +436,7 @@ window.__ModuleLoader__.load({
           h('button', { className: 'dsio-button', type: 'button', onClick: save }, copy.save),
           status === '' ? null : h('span', { className: 'dsio-status' }, status)
         ),
-        h('div', { className: 'dsio-actions' },
-          h('input', {
-            className: 'dsio-input',
-            style: { flex: '1 1 240px' },
-            value: prompt,
-            placeholder: copy.prompt,
-            onChange: (event) => setPrompt(event.target.value)
-          }),
-          h('button', {
-            className: 'dsio-button',
-            type: 'button',
-            'data-primary': 'true',
-            disabled: busy || prompt.trim() === '',
-            onClick: generate
-          }, busy ? copy.generating : copy.generate)
-        ),
-        error === '' ? null : h('div', { className: 'dsio-error' }, `${copy.failed}${error}`),
-        files.length === 0 ? null : h('div', { className: 'dsio-files' },
-          ...files.map((file) => h('div', { className: 'dsio-file', key: file.path },
-            h('div', null, file.path),
-            h('img', { className: 'dsio-thumb', alt: '', src: `data:${file.mimeType};base64,${file.base64 ?? ''}` })
-          ))
-        )
+        error === '' ? null : h('div', { className: 'dsio-error' }, `${copy.failed}${error}`)
       )
     }
 

@@ -3,17 +3,21 @@
  *
  * Two jobs live here, and both of them need host privileges:
  *
- * 1. **The HTTP route.** The browser cannot call a third-party image endpoint
- *    directly (CORS, and the API key must never reach the page), so every
- *    generation request travels page → host route → provider → host → page.
- *    The route also owns the filesystem, because a generated image has to be
- *    written somewhere the Session filesystem can read.
- *
- * 2. **The `generate_image` tool.** A DSH tool is registered into `ctx.tools`,
+ * 1. **The `generate_image` tool.** A DSH tool is registered into `ctx.tools`,
  *    which is a host service. The tool schema is the whole reason this plugin
  *    has a host half at all: `defineTool` builds a model-facing name,
  *    description and parameter schema, and the registry feeds those schemas
  *    into system-prompt assembly automatically.
+ *
+ *    The call itself is host work too: the browser cannot call a third-party
+ *    image endpoint directly (CORS, and the API key must never reach the page),
+ *    and a generated image has to be written somewhere the Session filesystem
+ *    can read.
+ *
+ * 2. **The settings route.** The storage domain is a host service, so the
+ *    settings page reads and writes through `GET`/`POST /settings`. The route
+ *    deliberately cannot generate: the tool is the only path that spends a
+ *    call.
  *
  * Whether the tool reaches a given agent is NOT decided here. A tool
  * registered on the host context is visible to every agent; the "inject into
@@ -24,9 +28,9 @@
  * while the installed plugin stays one package. See src/client.js for the
  * switching half.
  *
- * Settings (endpoint, key reference, model, size) are persisted through the
- * harness storage domain so they survive a restart, and read back by the
- * client over the route below.
+ * Settings (endpoint, key reference, model, size, quality) are persisted
+ * through the harness storage domain so they survive a restart, and read back
+ * by the client over the route below.
  */
 import fs from 'node:fs/promises'
 import os from 'node:os'
@@ -88,7 +92,10 @@ class ImageError extends Error {
  */
 const SETTINGS_DEFAULTS = {
   // WIDTHxHEIGHT, or `auto` to let the provider pick the aspect ratio.
-  size: 'auto'
+  size: 'auto',
+  // `auto` lets the provider pick its own quality, which is what an omitted
+  // field means anyway. Same reasoning as `size` above.
+  quality: 'auto'
 }
 
 function normalizeSettings(raw) {
@@ -223,13 +230,13 @@ function mergeSettings(config, stored) {
   // Defaults that hold when neither the settings document nor the row config
   // names a value.
   //
-  // `size` defaults to `auto` because that is what the endpoint does anyway: a
-  // request that omits the field is answered at the provider's own choice of
-  // aspect ratio — the one image produced so far came back 1024x1536 for a
+  // `size` and `quality` default to `auto` because that is what the endpoint
+  // does anyway: a request that omits the field is answered at the provider's
+  // own choice — the one image produced so far came back 1024x1536 for a
   // portrait prompt with no size configured. Naming `auto` makes that visible in
-  // the settings screen instead of hiding it in an empty box. The default lives
+  // the settings screen instead of hiding it in an empty box. The defaults live
   // here rather than only in the bundle patch, so that no patch ordering can
-  // drop it.
+  // drop them.
   for (const [key, value] of Object.entries(SETTINGS_DEFAULTS)) {
     if (merged[key] === '' || merged[key] === undefined) merged[key] = value
   }
@@ -805,8 +812,7 @@ function defaultOutputDir() {
 
 /**
  * Generate images and write them to disk. This is the single implementation
- * behind both callers — the page's button and the model's `generate_image`
- * tool — so the two can never drift.
+ * behind the model's `generate_image` tool.
  *
  * @returns the written files plus the provider's own usage block, if any.
  */
@@ -920,7 +926,7 @@ function describeSelection(ctx, state, stored) {
  *
  * The tool is deliberately thin: it validates its arguments, hands them to
  * `generateImages`, and renders one line per file. It carries no provider
- * knowledge, so the page and the model can never generate differently.
+ * knowledge, so it cannot disagree with the settings the user saved.
  *
  * `ctx.tools` is a host service, but a tool registered here is visible to every
  * agent in the profile. Making it visible to *one* preset is the bundle-layer
@@ -1049,10 +1055,14 @@ async function readJson(req) {
  * Answer one route request.
  *
  * `route` is the sub-path under the route base, already normalised by
- * `routePath()` — `/settings`, `/generate`, or `/`. Every mutation is gated on
- * the custom header, and every read is too: the route must never become a way
- * for another page to spend the user's image quota. A same-origin request from
- * our own client half always carries it.
+ * `routePath()` — `/settings` or `/`. Every mutation is gated on the custom
+ * header, and every read is too: the route must never become a way for another
+ * page to read the user's configuration. A same-origin request from our own
+ * client half always carries it.
+ *
+ * There is deliberately no generation route. The settings page edits settings;
+ * the only path that spends a call is the `generate_image` tool, so a page
+ * cannot be talked into burning image quota by a stray request.
  */
 async function handle(ctx, state, req, res, route) {
   if (req.headers === undefined || req.headers === null || req.headers[HEADER] === undefined) {
@@ -1073,19 +1083,6 @@ async function handle(ctx, state, req, res, route) {
       return
     }
     sendJson(res, 405, { ok: false, error: 'method not allowed' })
-    return
-  }
-
-  if (route === '/generate') {
-    if (req.method !== 'POST') {
-      sendJson(res, 405, { ok: false, error: 'method not allowed' })
-      return
-    }
-    const payload = await readJson(req)
-    const controller = new AbortController()
-    req.on('aborted', () => controller.abort(new Error('client aborted')))
-    const result = await generateImages(ctx, state, payload, controller.signal)
-    sendJson(res, 200, { ok: true, ...result })
     return
   }
 

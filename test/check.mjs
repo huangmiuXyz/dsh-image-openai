@@ -175,7 +175,12 @@ check('every route the host handles is one the client calls', () => {
   const called = new Set([...client.matchAll(/call\('(\/[a-z]+)'/g)].map((match) => match[1]))
   for (const path of called) assert.ok(handled.has(path), `client calls ${path}, host does not handle it`)
   assert.ok(handled.has('/settings'))
-  assert.ok(handled.has('/generate'))
+  // Deliberately NOT handled: the settings page only edits settings. The single
+  // path that spends a call is the `generate_image` tool, so no page request can
+  // burn image quota — asserted rather than assumed, since re-adding a route
+  // would otherwise pass unnoticed.
+  assert.ok(!handled.has('/generate'), 'the page must not be able to generate')
+  assert.ok(!called.has('/generate'), 'the client must not call a generation route')
 })
 
 check('both the exact route and its prefix are registered', () => {
@@ -198,13 +203,12 @@ check('the handler derives its own sub-path, because the server passes only (req
   assert.ok(host.includes('function routePath('))
 })
 
-check('the four spellings the client uses all resolve to a handled route', () => {
+check('the spellings the client uses all resolve to a handled route', () => {
   const routePath = (url) => {
     const rest = url.slice('/dsh-image-openai'.length).replace(/\/+$/, '')
     return rest === '' ? '/' : rest
   }
   assert.equal(routePath('/dsh-image-openai/settings'), '/settings')
-  assert.equal(routePath('/dsh-image-openai/generate'), '/generate')
   assert.equal(routePath('/dsh-image-openai'), '/')
   assert.equal(routePath('/dsh-image-openai/'), '/')
 })
@@ -237,21 +241,28 @@ check('the settings route answers from the document it just read', () => {
   assert.match(host, /ctx\.inject\(\['storageDomain'\][\s\S]{0,240}readSettings\(scope\)/, 'the warm-up belongs behind an injection')
 })
 
-check('the size defaults to auto, in code and in the shipped patch', async () => {
+check('the size and quality default to auto, in code and in the shipped patch', async () => {
   const module = await import(path.join(root, 'src/index.js'))
-  // `auto` is what an absent size means anyway — the one image generated so far
+  // `auto` is what an absent field means anyway — the one image generated so far
   // came back 1024x1536 for a portrait prompt with no size configured. Naming it
   // makes the behaviour visible instead of hiding it in an empty box.
   assert.equal(module.SETTINGS_DEFAULTS.size, 'auto', 'the code default must be auto')
   assert.equal(module.mergeSettings({}, {}).size, 'auto', 'nothing configured still means auto')
   assert.equal(module.mergeSettings({}, { size: '512x512' }).size, '512x512', 'a stored size must win over the default')
   assert.equal(module.mergeSettings({ size: '1024x1536' }, {}).size, '1024x1536', 'the row config must win over the default')
-  // Shipped too, so the profile shows the intended default rather than an empty
-  // field that only the code knows the meaning of.
-  assert.match(patch, /- id: image-openai\n      name: 'dsh-image-openai'\n      config:\n        size: auto/, 'the bundle patch must declare the default')
-  // And the box says so, without a sentence underneath it.
+  // Quality follows the same rule, for the same reason.
+  assert.equal(module.SETTINGS_DEFAULTS.quality, 'auto', 'the code default must be auto')
+  assert.equal(module.mergeSettings({}, {}).quality, 'auto', 'nothing configured still means auto')
+  assert.equal(module.mergeSettings({}, { quality: 'high' }).quality, 'high', 'a stored quality must win over the default')
+  assert.equal(module.mergeSettings({ quality: 'low' }, {}).quality, 'low', 'the row config must win over the default')
+  // Shipped too, so the profile shows the intended defaults rather than empty
+  // fields whose meaning only the code knows.
+  assert.match(patch, /- id: image-openai\n      name: 'dsh-image-openai'\n      config:\n        size: auto\n        quality: auto/, 'the bundle patch must declare the defaults')
+  // And the boxes say so, without a sentence underneath them.
   assert.match(client, /field\(copy\.size, 'size', \{ placeholder: 'auto' \}\)/, 'the size field must show its default')
+  assert.match(client, /field\(copy\.quality, 'quality', \{ placeholder: 'auto' \}\)/, 'the quality field must show its default')
   assert.ok(!/field\(copy\.size, 'size', \{ placeholder: '1024x1024' \}\)/.test(client), 'the old placeholder implied a default that was never sent')
+  assert.ok(!/field\(copy\.quality, 'quality', \{ placeholder: 'standard' \}\)/.test(client), 'the old placeholder implied a default that was never sent')
 })
 
 check('a size is a WIDTHxHEIGHT pair, and blank means "use the configured default"', async () => {

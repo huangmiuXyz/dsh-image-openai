@@ -225,6 +225,24 @@ await check('a configured size is sent on both endpoints', async () => {
   assert.equal(two.calls[0].init.body.get('size'), '1536x1024', 'the edit form carries it too')
 })
 
+await check('the quality defaults to auto, so the provider picks the level', async () => {
+  // Same rule as the size: an omitted `quality` is the provider's own choice, so
+  // naming `auto` states the behaviour instead of leaving it implicit.
+  const { calls } = await withFetch(() => plugin.generateImages(context(), state(), { prompt: 'a cat', cwd: workspace, outputDir: outDir }))
+  assert.equal(JSON.parse(calls[0].init.body).quality, 'auto')
+})
+
+await check('a configured quality is sent on both endpoints', async () => {
+  const leveled = () => ({
+    config: { baseURL: 'http://images.invalid/v1', model: 'gpt-image-test', outputDir: workspace, quality: 'high' },
+    stored: undefined
+  })
+  const one = await withFetch(() => plugin.generateImages(context(), leveled(), { prompt: 'a cat', cwd: workspace, outputDir: outDir }))
+  assert.equal(JSON.parse(one.calls[0].init.body).quality, 'high')
+  const two = await withFetch(() => plugin.generateImages(context(), leveled(), { prompt: 'a cat', image: inputPng, cwd: workspace, outputDir: outDir }))
+  assert.equal(two.calls[0].init.body.get('quality'), 'high', 'the edit form carries it too')
+})
+
 await check('a per-call size wins, and a blank one keeps the configured size', async () => {
   const one = await withFetch(() => plugin.generateImages(context(), state(), { prompt: 'a cat', size: '1024 × 1536', cwd: workspace, outputDir: outDir }))
   assert.equal(JSON.parse(one.calls[0].init.body).size, '1024x1536', 'a per-call size must normalise and win')
