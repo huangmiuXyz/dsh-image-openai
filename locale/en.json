@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Image generation (OpenAI-compatible)",
+    "description": "Generates images through any OpenAI-compatible images endpoint, and a switch in the composer tool row decides whether the generate_image tool is composed into the preset."
+  }
+}

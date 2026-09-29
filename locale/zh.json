@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "图像生成（OpenAI 兼容）",
+    "description": "通过任意 OpenAI 兼容的图像接口生成图片，并可用输入框工具行里的开关决定是否把 generate_image 工具注入到预设。"
+  }
+}

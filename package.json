@@ -1,0 +1,56 @@
+{
+  "name": "dsh-image-openai",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Generate images through any OpenAI-compatible images endpoint, choose which configured model provider and image model to use, and toggle from the composer tool row whether the generate_image tool is composed into the agent preset. · 通过任意 OpenAI 兼容的图像接口生成图片，可选择使用已配置的模型提供商与图像模型，并用输入框工具行里的开关决定是否把 generate_image 工具注入到预设。",
+  "license": "MIT",
+  "keywords": [
+    "deepseek",
+    "harness",
+    "dsh",
+    "dsh-plugin",
+    "image",
+    "image-generation",
+    "openai",
+    "images-generations"
+  ],
+  "main": "src/index.js",
+  "icon": "./icon.svg",
+  "files": [
+    "src",
+    "tool",
+    "locale",
+    "icon.svg",
+    "cordis.patch.yml"
+  ],
+  "exports": {
+    ".": "./src/index.js",
+    "./client": "./src/client.js",
+    "./tool": "./tool/index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json",
+    "./tool/package.json": "./tool/package.json",
+    "./tool/locale/*.json": "./tool/locale/*.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  },
+  "scripts": {
+    "test": "node test/check.mjs && node test/switch.mjs && node test/generate.mjs && npm run test:credential && npm run test:schema && npm run test:storage",
+    "test:switch": "node test/switch.mjs",
+    "test:generate": "node test/generate.mjs",
+    "test:credential": "ELECTRON_RUN_AS_NODE=1 \"/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness\" test/credential.mjs",
+    "test:schema": "ELECTRON_RUN_AS_NODE=1 \"/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness\" test/tool-schema.mjs",
+    "test:storage": "ELECTRON_RUN_AS_NODE=1 \"/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness\" test/storage.mjs"
+  }
+}

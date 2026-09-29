@@ -1,0 +1,8 @@
+{
+  "name": "dsh-image-openai-tool",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Display metadata for the `dsh-image-openai/tool` Loader row. This is not a package to install or publish: it exists so the subpath specifier resolves to a manifest carrying its own icon.",
+  "icon": "./icon.svg"
+}

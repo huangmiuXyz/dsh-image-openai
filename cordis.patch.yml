@@ -1,0 +1,45 @@
+# dsh bundle patch: the plugin's two Loader rows.
+#
+# `image-openai` is this package's main module: the composer switch, the settings
+# page on the Plugins screen, and the HTTP routes. `image-openai-tool` is the
+# package's `./tool` subpath: the `generate_image` tool alone.
+#
+# Two rows, and the switch in the composer toggles the SECOND one. Toggling a row
+# is a profile patch override (`pluginManager.setPluginEnabled`), so nothing is
+# added to or removed from `dsh.profile.bundles` and no reconciliation pass can
+# prune the switch away — the failure mode an earlier, bundle-toggling design had.
+# The write is addressed by `entryId`/`patchId`, never by specifier, so the two
+# rows may name one package or two without changing how the switch works.
+#
+# Why the tool row names a SUBPATH rather than a second package:
+#
+#   - The Plugins screen titles a row with the metadata of the specifier it names
+#     (`packages.metaOf(row.name, base)`), and that lookup resolves
+#     `<specifier>/locale/<language>.json` and `<specifier>/package.json` through
+#     the SPECIFIER. A subpath therefore carries its own title, description and
+#     icon, so the two rows are not identical-looking — which was the only reason
+#     the tool once lived in a sibling package.
+#   - A subpath adds no package: no second `node_modules` entry, no `link:`
+#     dependency, one `pnpm install` instead of two.
+#   - It declares no `dsh.bundle`, and only profile dependencies that ARE bundles
+#     are listed as installed, so it never becomes a second entry in the
+#     installed list.
+#   - It declares no `dsh.client` either, so `dsh.client` has exactly one
+#     declarer and the composer gets exactly one switch.
+#
+# The two `exports` entries that carry the labelling are load-bearing, not
+# decoration: `./tool/locale/*.json` (every language is re-resolved through the
+# full specifier) and `./tool/package.json` (the icon is read from the manifest
+# that specifier resolves to). Dropping either makes the row fall back to the
+# package name or lose its icon, silently.
+#
+# `size: auto` is the shipped default: the endpoint picks the aspect ratio, which
+# is what it does when the field is absent anyway. The plugin also carries this
+# default in code, so losing the config to a patch ordering cannot change it.
+- insert:
+    - id: image-openai
+      name: 'dsh-image-openai'
+      config:
+        size: auto
+    - id: image-openai-tool
+      name: 'dsh-image-openai/tool'

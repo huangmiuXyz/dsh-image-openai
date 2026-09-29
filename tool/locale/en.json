@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Image tool row (optional)",
+    "description": "One job: register generate_image. While this row is on the model can generate images; while it is off the model cannot see the tool."
+  }
+}
